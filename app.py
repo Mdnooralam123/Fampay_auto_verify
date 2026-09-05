@@ -1,6 +1,6 @@
 """
 UPI Auto-Payment Verifier – Vercel Serverless Edition
-Complete error handling, safe Supabase/Gmail fallback, colorful FamGateway UI.
+Complete error handling, safe Supabase/Gmail fallback, premium UI with success screen.
 """
 
 import os
@@ -78,12 +78,12 @@ def handle_exception(e):
         <!DOCTYPE html>
         <html>
         <head><title>Error</title>
-        <style>body{font-family:sans-serif;text-align:center;padding:2rem;background:#0B0B1A;color:#F8FAFC;}</style>
+        <style>body{font-family:sans-serif;text-align:center;padding:2rem;background:#e8f4fd;color:#1a202c;}</style>
         </head>
         <body>
         <h1>⚠️ Something went wrong</h1>
         <p>Please try again later.</p>
-        <p><a href="/" style="color:#8B5CF6;">Go Home</a></p>
+        <p><a href="/" style="color:#4a6cf7;">Go Home</a></p>
         </body>
         </html>
     ''', 500)
@@ -627,7 +627,7 @@ def qr_image():
         qr = qrcode.QRCode(box_size=10, border=4)
         qr.add_data(upi_intent)
         qr.make(fit=True)
-        img = qr.make_image(fill_color="#8B5CF6", back_color="#FFFFFF")
+        img = qr.make_image(fill_color="#4a6cf7", back_color="#FFFFFF")
         img_io = BytesIO()
         img.save(img_io, 'PNG')
         img_io.seek(0)
@@ -637,7 +637,7 @@ def qr_image():
         return jsonify({'status': 'error', 'message': 'Failed to generate QR'}), 500
 
 # ============================================
-# PAYMENT PAGE TEMPLATE (Colorful FamGateway style, 1-second auto-check)
+# PAYMENT PAGE TEMPLATE – Proper Jinja2 with Success UI
 # ============================================
 PAYMENT_PAGE_TEMPLATE = '''
 <!DOCTYPE html>
@@ -650,94 +650,46 @@ PAYMENT_PAGE_TEMPLATE = '''
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #0B0B1A;
+            background: #e8f4fd;
             min-height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
             padding: 20px;
             margin: 0;
-            color: #F8FAFC;
-        }
-        .ambient {
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            pointer-events: none;
-            z-index: 0;
-            overflow: hidden;
-        }
-        .orb {
-            position: absolute;
-            border-radius: 50%;
-            filter: blur(120px);
-            will-change: transform;
-            animation: orbFloat 24s ease-in-out infinite alternate;
-        }
-        .orb--purple { width: 60vw; height: 60vw; background: #6C2BD9; opacity: 0.15; top: -15%; left: -10%; }
-        .orb--blue   { width: 50vw; height: 50vw; background: #1E90FF; opacity: 0.10; bottom: -10%; right: -5%; animation-delay: -8s; }
-        .orb--pink   { width: 40vw; height: 40vw; background: #EC4899; opacity: 0.07; top: 40%; left: 50%; animation-delay: -16s; }
-        @keyframes orbFloat {
-            0% { transform: translate(0, 0) scale(1); }
-            100% { transform: translate(10%, 8%) scale(1.3); }
+            color: #1a202c;
+            transition: background 0.4s;
         }
         .card {
-            position: relative;
-            z-index: 1;
-            background: rgba(18, 18, 40, 0.70);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
+            background: white;
             border-radius: 28px;
             padding: 32px 28px;
             max-width: 400px;
             width: 100%;
-            border: 1px solid rgba(108, 43, 217, 0.3);
-            box-shadow: 0 20px 60px rgba(0,0,0,0.6), 0 0 40px rgba(108,43,217,0.12);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.08);
+            position: relative;
             transition: box-shadow 0.3s;
-        }
-        .card:hover {
-            box-shadow: 0 30px 80px rgba(0,0,0,0.7), 0 0 60px rgba(108,43,217,0.18);
-        }
-        .card::before {
-            content: '';
-            position: absolute;
-            inset: -2px;
-            border-radius: 30px;
-            padding: 2px;
-            background: linear-gradient(135deg, rgba(139,92,246,0.4), rgba(30,144,255,0.3), rgba(236,72,153,0.2));
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask-composite: exclude;
-            pointer-events: none;
-            animation: borderPulse 8s ease-in-out infinite alternate;
-        }
-        @keyframes borderPulse {
-            0% { opacity: 0.4; }
-            100% { opacity: 0.9; }
+            min-height: 480px;
         }
         .header { text-align: center; margin-bottom: 20px; }
         .brand {
             font-size: 22px;
             font-weight: 700;
             letter-spacing: -0.5px;
-            background: linear-gradient(135deg, #8B5CF6, #1E90FF);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            color: #1a202c;
         }
-        .brand span { -webkit-text-fill-color: #F8FAFC; }
+        .brand span { color: #4a6cf7; }
 
         .order-total {
-            background: rgba(108, 43, 217, 0.12);
+            background: #f7fafc;
             border-radius: 18px;
             padding: 16px 12px;
             text-align: center;
             margin-bottom: 24px;
-            border: 1px solid rgba(108, 43, 217, 0.2);
         }
         .order-total .label {
             font-size: 13px;
-            color: #94A3B8;
+            color: #718096;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             font-weight: 500;
@@ -745,15 +697,12 @@ PAYMENT_PAGE_TEMPLATE = '''
         .order-total .amount {
             font-size: 36px;
             font-weight: 700;
-            background: linear-gradient(135deg, #8B5CF6, #1E90FF, #EC4899);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            color: #1a202c;
             margin-top: 2px;
         }
         .order-total .currency {
             font-size: 20px;
-            -webkit-text-fill-color: #94A3B8;
+            color: #718096;
         }
 
         .qr-section { text-align: center; margin: 16px 0 12px; }
@@ -762,8 +711,7 @@ PAYMENT_PAGE_TEMPLATE = '''
             padding: 8px;
             background: white;
             border-radius: 16px;
-            box-shadow: 0 0 40px rgba(108,43,217,0.25);
-            transition: box-shadow 0.3s;
+            box-shadow: 0 0 30px rgba(0,0,0,0.05);
         }
         .qr-wrapper img {
             display: block;
@@ -774,31 +722,28 @@ PAYMENT_PAGE_TEMPLATE = '''
         }
         .qr-section .sub {
             font-size: 14px;
-            color: #94A3B8;
+            color: #718096;
             margin-top: 10px;
             font-weight: 500;
         }
         .qr-section .save-btn {
             display: inline-block;
             margin-top: 10px;
-            background: rgba(255,255,255,0.08);
-            color: #E2E8F0;
+            background: #f7fafc;
+            color: #2d3748;
             padding: 6px 18px;
             border-radius: 30px;
             font-size: 13px;
             font-weight: 500;
             text-decoration: none;
-            border: 1px solid rgba(255,255,255,0.12);
-            transition: background 0.2s, transform 0.2s;
+            border: 1px solid #e2e8f0;
+            transition: background 0.2s;
         }
-        .qr-section .save-btn:hover {
-            background: rgba(255,255,255,0.15);
-            transform: scale(1.02);
-        }
+        .qr-section .save-btn:hover { background: #edf2f7; }
 
         .details {
             margin: 18px 0;
-            border-top: 1px solid rgba(255,255,255,0.06);
+            border-top: 1px solid #edf2f7;
             padding-top: 16px;
         }
         .detail-row {
@@ -807,22 +752,22 @@ PAYMENT_PAGE_TEMPLATE = '''
             padding: 6px 0;
             font-size: 15px;
         }
-        .detail-row .label { color: #94A3B8; }
+        .detail-row .label { color: #718096; }
         .detail-row .value {
             font-weight: 500;
-            color: #F8FAFC;
+            color: #2d3748;
         }
-        .timer-warning { color: #F87171; font-weight: 600; }
+        .timer-warning { color: #e53e3e; font-weight: 600; }
         .glow-text {
             animation: textGlow 3s ease-in-out infinite alternate;
         }
         @keyframes textGlow {
-            0% { text-shadow: 0 0 10px rgba(108,43,217,0.2); }
-            100% { text-shadow: 0 0 25px rgba(108,43,217,0.5); }
+            0% { text-shadow: 0 0 10px rgba(74,108,247,0.15); }
+            100% { text-shadow: 0 0 20px rgba(74,108,247,0.3); }
         }
 
         .status {
-            background: rgba(255,255,255,0.04);
+            background: #f7fafc;
             border-radius: 16px;
             padding: 14px;
             text-align: center;
@@ -833,33 +778,19 @@ PAYMENT_PAGE_TEMPLATE = '''
             align-items: center;
             justify-content: center;
             gap: 10px;
-            border: 1px solid rgba(255,255,255,0.06);
+            border: 1px solid #e2e8f0;
             transition: background 0.4s, border-color 0.4s, color 0.4s;
         }
         .status .spinner {
             display: inline-block;
             width: 18px;
             height: 18px;
-            border: 3px solid rgba(108,43,217,0.2);
-            border-top-color: #8B5CF6;
+            border: 3px solid #e2e8f0;
+            border-top-color: #4a6cf7;
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
-
-        .status.verified {
-            background: rgba(34, 197, 94, 0.12);
-            border-color: rgba(34, 197, 94, 0.25);
-            color: #22C55E;
-        }
-        .status.verified .spinner { display: none; }
-
-        .status.expired {
-            background: rgba(248, 113, 113, 0.12);
-            border-color: rgba(248, 113, 113, 0.25);
-            color: #F87171;
-        }
-        .status.expired .spinner { display: none; }
 
         .check-link {
             text-align: center;
@@ -867,77 +798,219 @@ PAYMENT_PAGE_TEMPLATE = '''
             font-size: 14px;
         }
         .check-link a {
-            color: #8B5CF6;
+            color: #4a6cf7;
             text-decoration: none;
             font-weight: 500;
-            transition: color 0.2s;
         }
-        .check-link a:hover { color: #A78BFA; text-decoration: underline; }
+        .check-link a:hover { text-decoration: underline; }
 
         .footer {
             text-align: center;
             margin-top: 18px;
             font-size: 13px;
-            color: #475569;
+            color: #a0aec0;
+        }
+
+        /* ===== SUCCESS OVERLAY ===== */
+        .success-overlay {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: white;
+            border-radius: 28px;
+            padding: 32px 28px;
+            z-index: 10;
+            text-align: center;
+            animation: fadeInScale 0.5s ease forwards;
+        }
+        .success-overlay.active {
+            display: block;
+        }
+        @keyframes fadeInScale {
+            0% { opacity: 0; transform: scale(0.96); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        .success-icon {
+            position: relative;
+            width: 90px;
+            height: 90px;
+            margin: 0 auto 16px;
+        }
+        .success-icon .circle {
+            width: 100%;
+            height: 100%;
+            background: #48bb78;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 0 0 rgba(72,187,120,0.4);
+            animation: pulse-green 2s ease-in-out infinite;
+        }
+        .success-icon .circle svg {
+            width: 50px;
+            height: 50px;
+            fill: none;
+            stroke: white;
+            stroke-width: 4;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            stroke-dasharray: 50;
+            stroke-dashoffset: 50;
+            animation: drawCheck 0.5s ease forwards 0.3s;
+        }
+        @keyframes drawCheck {
+            100% { stroke-dashoffset: 0; }
+        }
+        @keyframes pulse-green {
+            0% { box-shadow: 0 0 0 0 rgba(72,187,120,0.4); }
+            70% { box-shadow: 0 0 0 20px rgba(72,187,120,0); }
+            100% { box-shadow: 0 0 0 0 rgba(72,187,120,0); }
+        }
+        /* Ripple ring */
+        .ripple {
+            position: absolute;
+            top: -10px;
+            left: -10px;
+            width: calc(100% + 20px);
+            height: calc(100% + 20px);
+            border: 2px solid rgba(72,187,120,0.3);
+            border-radius: 50%;
+            animation: rippleExpand 2s ease-out infinite;
+        }
+        @keyframes rippleExpand {
+            0% { transform: scale(0.8); opacity: 1; }
+            100% { transform: scale(1.4); opacity: 0; }
+        }
+
+        .success-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1a202c;
+            margin: 12px 0 4px;
+        }
+        .success-sub {
+            color: #718096;
+            font-size: 16px;
+            margin-bottom: 16px;
+        }
+        .verified-badge {
+            display: inline-block;
+            background: #c6f6d5;
+            color: #276749;
+            padding: 6px 18px;
+            border-radius: 30px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+
+        /* Confetti container (full page) */
+        .confetti-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 999;
+            overflow: hidden;
+        }
+        .confetti {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            opacity: 0.9;
+            animation: confettiFall linear forwards;
+        }
+        @keyframes confettiFall {
+            0% { transform: translateY(-10px) rotate(0deg) scale(1); opacity: 1; }
+            100% { transform: translateY(110vh) rotate(720deg) scale(0.5); opacity: 0; }
+        }
+
+        .btn {
+            display: inline-block;
+            background: #4a6cf7;
+            color: white;
+            padding: 10px 32px;
+            border-radius: 40px;
+            text-decoration: none;
+            font-weight: 600;
+            margin-top: 12px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .btn:hover {
+            transform: scale(1.02);
+            box-shadow: 0 4px 12px rgba(74,108,247,0.3);
         }
 
         @media (max-width: 480px) {
             .card { padding: 22px 16px; }
             .qr-wrapper img { width: 150px; height: 150px; }
             .order-total .amount { font-size: 30px; }
+            .success-icon { width: 70px; height: 70px; }
+            .success-icon .circle svg { width: 40px; height: 40px; }
         }
         @media (prefers-reduced-motion: reduce) {
-            .orb, .card::before, .glow-text { animation: none !important; }
+            .success-icon .circle, .ripple, .confetti { animation: none !important; }
         }
     </style>
 </head>
 <body>
-    <div class="ambient">
-        <div class="orb orb--purple"></div>
-        <div class="orb orb--blue"></div>
-        <div class="orb orb--pink"></div>
+    <div class="card" id="paymentCard">
+        <!-- PENDING UI -->
+        <div id="pendingUI">
+            <div class="header"><div class="brand">Fam<span>Gateway</span>™</div></div>
+            <div class="order-total">
+                <div class="label">ORDER TOTAL</div>
+                <div class="amount">₹ {{ amount }} <span class="currency">INR</span></div>
+            </div>
+            <div class="qr-section">
+                <div class="qr-wrapper"><img id="qr-img" src="{{ qr_url }}" alt="QR Code"></div>
+                <div class="sub">SCAN WITH ANY UPI APP</div>
+                <a href="{{ qr_url }}" download="qr_{{ order_id }}.png" class="save-btn">🔗 Save QR</a>
+            </div>
+            <div class="details">
+                <div class="detail-row"><span class="label">Merchant</span><span class="value">{{ merchant }}</span></div>
+                <div class="detail-row"><span class="label">Order ID</span><span class="value">{{ order_id }}</span></div>
+                <div class="detail-row"><span class="label">Expires In</span><span class="value glow-text" id="timer">--:--</span></div>
+            </div>
+            <div class="status" id="status">
+                <span class="spinner"></span>
+                <span id="status-text">Waiting for payment…</span>
+            </div>
+            <div class="check-link"><a href="{{ verify_url }}" target="_blank">Check Status</a></div>
+            <div class="footer">⚡ Auto‑verified instantly after UPI payment</div>
+        </div>
+
+        <!-- SUCCESS OVERLAY -->
+        <div class="success-overlay" id="successOverlay">
+            <div class="success-icon">
+                <div class="ripple"></div>
+                <div class="circle">
+                    <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+            </div>
+            <div class="success-title">Payment Successful!</div>
+            <div class="success-sub">Thank you for your payment.</div>
+            <div class="verified-badge">✓ Payment received</div>
+            <div class="details" style="text-align:left;">
+                <div class="detail-row"><span class="label">Order ID</span><span class="value">{{ order_id }}</span></div>
+                <div class="detail-row"><span class="label">Amount</span><span class="value">₹ {{ amount }}</span></div>
+            </div>
+            <a href="/" class="btn">Done</a>
+        </div>
     </div>
-    <div class="card">
-        <div class="header"><div class="brand">Fam<span>Gateway</span>™</div></div>
 
-        <div class="order-total">
-            <div class="label">ORDER TOTAL</div>
-            <div class="amount">₹ {{ amount }} <span class="currency">INR</span></div>
-        </div>
-
-        <div class="qr-section">
-            <div class="qr-wrapper"><img id="qr-img" src="{{ qr_url }}" alt="QR Code"></div>
-            <div class="sub">SCAN WITH ANY UPI APP</div>
-            <a href="{{ qr_url }}" download="qr_{{ order_id }}.png" class="save-btn">🔗 Save QR</a>
-        </div>
-
-        <div class="details">
-            <div class="detail-row">
-                <span class="label">Merchant</span>
-                <span class="value">{{ merchant }}</span>
-            </div>
-            <div class="detail-row">
-                <span class="label">Order ID</span>
-                <span class="value">{{ order_id }}</span>
-            </div>
-            <div class="detail-row">
-                <span class="label">Expires In</span>
-                <span class="value glow-text" id="timer">--:--</span>
-            </div>
-        </div>
-
-        <div class="status" id="status">
-            <span class="spinner"></span>
-            <span id="status-text">Waiting for payment…</span>
-        </div>
-
-        <div class="check-link">
-            <a href="{{ verify_url }}" target="_blank">Check Status</a>
-        </div>
-        <div class="footer">⚡ Auto‑verified instantly after UPI payment</div>
-    </div>
+    <!-- Confetti container -->
+    <div class="confetti-container" id="confettiContainer"></div>
 
     <script>
+        // Timer
         var expiresStr = "{{ expires_at }}";
         var datePart, timePart, dd, mm, yyyy, hh, min, sec;
         if (expiresStr) {
@@ -972,6 +1045,8 @@ PAYMENT_PAGE_TEMPLATE = '''
                 timerEl.className = 'timer-warning';
                 document.getElementById('status').className = 'status expired';
                 document.getElementById('status-text').textContent = '⏰ Order expired';
+                // stop polling if expired
+                if (window.checkInterval) clearInterval(window.checkInterval);
                 return;
             }
             var mins = Math.floor(diff / 60000);
@@ -981,51 +1056,69 @@ PAYMENT_PAGE_TEMPLATE = '''
         updateTimer();
         setInterval(updateTimer, 1000);
 
+        // Polling
+        var verifyUrl = "{{ verify_url }}";
         var statusEl = document.getElementById('status');
         var statusText = document.getElementById('status-text');
-        var verifyUrl = "{{ verify_url }}";
-        var checkCount = 0;
-        var maxChecks = 60; // Stop after 60 seconds (60 checks)
-        var isVerified = false;
+        var successOverlay = document.getElementById('successOverlay');
+        var pendingUI = document.getElementById('pendingUI');
+        var confettiContainer = document.getElementById('confettiContainer');
+        var isSuccess = false;
+        var checkInterval;
+
+        function showSuccess() {
+            if (isSuccess) return;
+            isSuccess = true;
+            if (checkInterval) clearInterval(checkInterval);
+            // Hide pending, show success overlay
+            pendingUI.style.display = 'none';
+            successOverlay.classList.add('active');
+            // Launch confetti
+            launchConfetti();
+        }
+
+        function launchConfetti() {
+            var colors = ['#48bb78', '#4a6cf7', '#ed64a6', '#f6ad55', '#63b3ed', '#9f7aea', '#fc8181', '#68d391'];
+            for (var i = 0; i < 80; i++) {
+                var el = document.createElement('div');
+                el.className = 'confetti';
+                el.style.left = Math.random() * 100 + '%';
+                el.style.width = (Math.random() * 10 + 5) + 'px';
+                el.style.height = (Math.random() * 10 + 5) + 'px';
+                el.style.background = colors[Math.floor(Math.random() * colors.length)];
+                el.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px';
+                el.style.animationDuration = (Math.random() * 2 + 1.5) + 's';
+                el.style.animationDelay = (Math.random() * 1.5) + 's';
+                confettiContainer.appendChild(el);
+            }
+        }
 
         function checkStatus() {
-            if (isVerified) return;
-            checkCount++;
-            if (checkCount > maxChecks) {
-                // Stop polling after timeout
-                return;
-            }
+            if (isSuccess) return;
             fetch(verifyUrl)
                 .then(function(res) { return res.json(); })
                 .then(function(data) {
                     if (data.data && data.data.status === 'verified') {
-                        isVerified = true;
-                        statusEl.className = 'status verified';
-                        statusText.textContent = '✅ Payment Verified!';
-                        // Show success popup after 1.5 seconds
-                        setTimeout(function() { 
-                            location.reload(); 
-                        }, 1500);
+                        showSuccess();
                     } else if (data.data && data.data.status === 'expired') {
-                        isVerified = true;
+                        if (checkInterval) clearInterval(checkInterval);
                         statusEl.className = 'status expired';
                         statusText.textContent = '⏰ Order expired';
-                        setTimeout(function() { location.reload(); }, 2000);
                     }
                 })
-                .catch(function() {});
+                .catch(function() { /* ignore network errors, keep polling */ });
         }
-        // Check every 1 second for ultra‑fast verification
-        setInterval(checkStatus, 1000);
-        // Also check immediately
-        checkStatus();
+
+        // Start polling every 1 second
+        checkStatus(); // immediate first check
+        checkInterval = setInterval(checkStatus, 1000);
     </script>
 </body>
 </html>
 '''
 
 # ============================================
-# SUCCESS PAGE (with beautiful popup animation)
+# SUCCESS PAGE (if order already verified)
 # ============================================
 SUCCESS_PAGE = '''
 <!DOCTYPE html>
@@ -1038,163 +1131,135 @@ SUCCESS_PAGE = '''
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #0B0B1A;
+            background: #e8f4fd;
             min-height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
             padding: 20px;
             margin: 0;
+            color: #1a202c;
             overflow: hidden;
-            color: #F8FAFC;
-        }
-        .ambient {
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            pointer-events: none;
-            z-index: 0;
-            overflow: hidden;
-        }
-        .orb {
-            position: absolute;
-            border-radius: 50%;
-            filter: blur(120px);
-            will-change: transform;
-            animation: orbFloat 20s ease-in-out infinite alternate;
-        }
-        .orb--emerald { width: 60vw; height: 60vw; background: #22C55E; opacity: 0.12; top: -5%; left: -15%; }
-        .orb--violet { width: 50vw; height: 50vw; background: #8B5CF6; opacity: 0.08; bottom: -10%; right: -5%; animation-delay: -6s; }
-        .orb--cyan   { width: 40vw; height: 40vw; background: #06B6D4; opacity: 0.06; top: 30%; left: 50%; animation-delay: -12s; }
-        @keyframes orbFloat {
-            0% { transform: translate(0, 0) scale(1); }
-            100% { transform: translate(10%, 8%) scale(1.3); }
         }
         .card {
-            position: relative;
-            z-index: 1;
-            background: rgba(18, 18, 40, 0.75);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border-radius: 32px;
+            background: white;
+            border-radius: 28px;
             padding: 40px 32px;
-            max-width: 440px;
+            max-width: 400px;
             width: 100%;
-            border: 1px solid rgba(34,197,94,0.3);
-            box-shadow: 0 20px 60px rgba(0,0,0,0.6), 0 0 50px rgba(34,197,94,0.1);
-            animation: popIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.08);
             text-align: center;
+            animation: popIn 0.5s ease forwards;
         }
         @keyframes popIn {
-            0% { transform: scale(0.8) rotate(-2deg); opacity: 0; }
-            100% { transform: scale(1) rotate(0); opacity: 1; }
+            0% { transform: scale(0.9); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
         }
-        .card::before {
-            content: '';
-            position: absolute;
-            inset: -2px;
-            border-radius: 34px;
-            padding: 2px;
-            background: linear-gradient(135deg, rgba(34,197,94,0.4), rgba(139,92,246,0.3), rgba(6,182,212,0.2));
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask-composite: exclude;
-            pointer-events: none;
-            animation: borderPulse 8s ease-in-out infinite alternate;
+        .success-icon {
+            position: relative;
+            width: 90px;
+            height: 90px;
+            margin: 0 auto 16px;
         }
-        @keyframes borderPulse {
-            0% { opacity: 0.4; }
-            100% { opacity: 0.9; }
-        }
-        .checkmark {
-            width: 100px;
-            height: 100px;
-            background: linear-gradient(135deg, #22C55E, #16A34A, #059669);
+        .success-icon .circle {
+            width: 100%;
+            height: 100%;
+            background: #48bb78;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin: 0 auto 20px;
-            box-shadow: 0 0 60px rgba(34,197,94,0.4), 0 0 120px rgba(34,197,94,0.15);
-            animation: bounceIn 0.8s ease;
+            box-shadow: 0 0 0 0 rgba(72,187,120,0.4);
+            animation: pulse-green 2s ease-in-out infinite;
         }
-        .checkmark svg {
-            width: 60px;
-            height: 60px;
+        .success-icon .circle svg {
+            width: 50px;
+            height: 50px;
             fill: none;
             stroke: white;
             stroke-width: 4;
             stroke-linecap: round;
             stroke-linejoin: round;
-            stroke-dasharray: 60;
-            stroke-dashoffset: 60;
+            stroke-dasharray: 50;
+            stroke-dashoffset: 50;
             animation: drawCheck 0.5s ease forwards 0.3s;
-        }
-        @keyframes bounceIn {
-            0% { transform: scale(0); }
-            50% { transform: scale(1.15); }
-            70% { transform: scale(0.95); }
-            100% { transform: scale(1); }
         }
         @keyframes drawCheck {
             100% { stroke-dashoffset: 0; }
         }
+        @keyframes pulse-green {
+            0% { box-shadow: 0 0 0 0 rgba(72,187,120,0.4); }
+            70% { box-shadow: 0 0 0 20px rgba(72,187,120,0); }
+            100% { box-shadow: 0 0 0 0 rgba(72,187,120,0); }
+        }
+        .ripple {
+            position: absolute;
+            top: -10px;
+            left: -10px;
+            width: calc(100% + 20px);
+            height: calc(100% + 20px);
+            border: 2px solid rgba(72,187,120,0.3);
+            border-radius: 50%;
+            animation: rippleExpand 2s ease-out infinite;
+        }
+        @keyframes rippleExpand {
+            0% { transform: scale(0.8); opacity: 1; }
+            100% { transform: scale(1.4); opacity: 0; }
+        }
         h1 {
-            font-size: 28px;
-            background: linear-gradient(135deg, #22C55E, #06B6D4, #8B5CF6);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            margin: 10px 0 6px;
+            font-size: 24px;
             font-weight: 700;
+            color: #1a202c;
+            margin: 12px 0 4px;
         }
         .sub {
-            color: #94A3B8;
+            color: #718096;
             font-size: 16px;
-            margin-bottom: 24px;
+            margin-bottom: 16px;
+        }
+        .verified-badge {
+            display: inline-block;
+            background: #c6f6d5;
+            color: #276749;
+            padding: 6px 18px;
+            border-radius: 30px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 16px;
         }
         .detail-box {
-            background: rgba(255,255,255,0.04);
+            background: #f7fafc;
             border-radius: 16px;
-            padding: 18px;
+            padding: 16px;
             text-align: left;
-            margin: 20px 0;
-            border: 1px solid rgba(255,255,255,0.06);
+            margin: 16px 0;
         }
         .detail-row {
             display: flex;
             justify-content: space-between;
-            padding: 8px 0;
-            font-size: 14px;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
+            padding: 6px 0;
+            font-size: 15px;
         }
-        .detail-row:last-child { border: none; }
-        .detail-row .label { color: #94A3B8; }
-        .detail-row .value {
-            font-weight: 500;
-            color: #F8FAFC;
-        }
+        .detail-row .label { color: #718096; }
+        .detail-row .value { font-weight: 500; color: #2d3748; }
         .btn {
             display: inline-block;
-            background: linear-gradient(135deg, #8B5CF6, #6366F1);
+            background: #4a6cf7;
             color: white;
-            padding: 12px 36px;
+            padding: 10px 32px;
             border-radius: 40px;
             text-decoration: none;
             font-weight: 600;
-            box-shadow: 0 4px 20px rgba(139,92,246,0.3);
-            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 12px;
+            transition: transform 0.2s;
         }
-        .btn:hover {
-            transform: scale(1.03);
-            box-shadow: 0 6px 30px rgba(139,92,246,0.5);
-        }
+        .btn:hover { transform: scale(1.02); }
         .confetti-container {
             position: fixed;
             top: 0; left: 0;
             width: 100%; height: 100%;
             pointer-events: none;
-            z-index: 0;
+            z-index: 999;
             overflow: hidden;
         }
         .confetti {
@@ -1209,25 +1274,23 @@ SUCCESS_PAGE = '''
         }
         @media (max-width: 480px) {
             .card { padding: 28px 18px; }
-            .checkmark { width: 80px; height: 80px; }
-            .checkmark svg { width: 48px; height: 48px; }
-        }
-        @media (prefers-reduced-motion: reduce) {
-            .orb, .card::before, .checkmark, .confetti { animation: none !important; }
+            .success-icon { width: 70px; height: 70px; }
+            .success-icon .circle svg { width: 40px; height: 40px; }
         }
     </style>
 </head>
 <body>
-    <div class="ambient">
-        <div class="orb orb--emerald"></div>
-        <div class="orb orb--violet"></div>
-        <div class="orb orb--cyan"></div>
-    </div>
     <div class="confetti-container" id="confetti"></div>
     <div class="card">
-        <div class="checkmark"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div class="success-icon">
+            <div class="ripple"></div>
+            <div class="circle">
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+        </div>
         <h1>Payment Successful!</h1>
-        <p class="sub">Your order has been verified instantly</p>
+        <p class="sub">Thank you for your payment.</p>
+        <div class="verified-badge">✓ Payment received</div>
         <div class="detail-box">
             <div class="detail-row"><span class="label">Order ID</span><span class="value">{{ order_id }}</span></div>
             <div class="detail-row"><span class="label">Amount</span><span class="value">₹ {{ amount }}</span></div>
@@ -1240,8 +1303,8 @@ SUCCESS_PAGE = '''
     <script>
         (function() {
             var container = document.getElementById('confetti');
-            var colors = ['#22C55E', '#8B5CF6', '#06B6D4', '#EC4899', '#F59E0B', '#F87171', '#34D399', '#A78BFA'];
-            for (var i = 0; i < 120; i++) {
+            var colors = ['#48bb78', '#4a6cf7', '#ed64a6', '#f6ad55', '#63b3ed', '#9f7aea', '#fc8181', '#68d391'];
+            for (var i = 0; i < 80; i++) {
                 var el = document.createElement('div');
                 el.className = 'confetti';
                 el.style.left = Math.random() * 100 + '%';
@@ -1249,8 +1312,8 @@ SUCCESS_PAGE = '''
                 el.style.height = (Math.random() * 10 + 5) + 'px';
                 el.style.background = colors[Math.floor(Math.random() * colors.length)];
                 el.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px';
-                el.style.animationDuration = (Math.random() * 2.5 + 1.5) + 's';
-                el.style.animationDelay = (Math.random() * 2.5) + 's';
+                el.style.animationDuration = (Math.random() * 2 + 1.5) + 's';
+                el.style.animationDelay = (Math.random() * 1.5) + 's';
                 container.appendChild(el);
             }
         })();
@@ -1273,7 +1336,7 @@ EXPIRED_PAGE = '''
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #0B0B1A;
+            background: #e8f4fd;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -1281,31 +1344,29 @@ EXPIRED_PAGE = '''
             padding: 20px;
         }
         .card {
-            background: rgba(18, 18, 40, 0.70);
-            backdrop-filter: blur(20px);
-            border-radius: 30px;
+            background: white;
+            border-radius: 28px;
             padding: 40px 32px;
             max-width: 420px;
             width: 100%;
             text-align: center;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-            border: 1px solid rgba(248,113,113,0.2);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.08);
         }
         .icon { font-size: 64px; margin-bottom: 16px; }
-        h1 { color: #F87171; font-size: 26px; margin-bottom: 8px; }
-        .sub { color: #94A3B8; font-size: 16px; margin-bottom: 20px; }
-        .detail { background: rgba(255,255,255,0.04); border-radius: 12px; padding: 16px; margin: 16px 0; border: 1px solid rgba(255,255,255,0.06); }
-        .detail .row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 15px; color: #E2E8F0; }
-        .row .label { color: #94A3B8; }
+        h1 { color: #e53e3e; font-size: 26px; margin-bottom: 8px; }
+        .sub { color: #718096; font-size: 16px; margin-bottom: 20px; }
+        .detail { background: #f7fafc; border-radius: 12px; padding: 16px; margin: 16px 0; text-align:left; }
+        .detail .row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 15px; }
+        .row .label { color: #718096; }
         .row .value { font-weight: 500; }
         .btn {
             display: inline-block;
-            background: linear-gradient(135deg, #8B5CF6, #6366F1);
+            background: #4a6cf7;
             color: white;
-            padding: 12px 32px;
+            padding: 10px 32px;
             border-radius: 40px;
             text-decoration: none;
-            font-weight: 500;
+            font-weight: 600;
             transition: transform 0.2s;
         }
         .btn:hover { transform: scale(1.02); }
@@ -1348,6 +1409,7 @@ def pay_page():
         merchant = CONFIG['PAYEE_NAME']
         status = order['status']
 
+        # If order already verified, show success page directly
         if status == 'verified':
             return render_template_string(SUCCESS_PAGE,
                 order_id=order_id,
@@ -1358,6 +1420,7 @@ def pay_page():
                 sender=order.get('sender_name', '')
             )
 
+        # Check expiry
         now_ist = datetime.now(IST)
         expires_ist = datetime.strptime(expires_at, '%d-%m-%Y %H:%M:%S').replace(tzinfo=IST)
         if now_ist > expires_ist:
@@ -1370,6 +1433,7 @@ def pay_page():
                 expires_at=expires_at
             )
 
+        # Pending – show the payment page with polling
         return render_template_string(PAYMENT_PAGE_TEMPLATE,
             amount=amount,
             qr_url=qr_url,
@@ -1384,12 +1448,12 @@ def pay_page():
             <!DOCTYPE html>
             <html>
             <head><title>Error</title>
-            <style>body{font-family:sans-serif;text-align:center;padding:2rem;background:#0B0B1A;color:#F8FAFC;}</style>
+            <style>body{font-family:sans-serif;text-align:center;padding:2rem;background:#e8f4fd;color:#1a202c;}</style>
             </head>
             <body>
             <h1>⚠️ Unable to load payment page</h1>
             <p>Please check the order ID and try again.</p>
-            <p><a href="/" style="color:#8B5CF6;">Go Home</a></p>
+            <p><a href="/" style="color:#4a6cf7;">Go Home</a></p>
             </body>
             </html>
         ''', 500)
@@ -1508,7 +1572,7 @@ def generate_qr_legacy():
         qr = qrcode.QRCode(box_size=10, border=4)
         qr.add_data(upi_intent)
         qr.make(fit=True)
-        img = qr.make_image(fill_color="#8B5CF6", back_color="#FFFFFF")
+        img = qr.make_image(fill_color="#4a6cf7", back_color="#FFFFFF")
         img_io = BytesIO()
         img.save(img_io, 'PNG')
         img_io.seek(0)
@@ -1541,7 +1605,7 @@ def index():
     return jsonify({
         'name': 'UPI Auto-Payment Verifier',
         'version': '5.0.0',
-        'description': 'Premium Neon-Glow UI with full payment verification.',
+        'description': 'Premium UI with real payment verification.',
         'endpoints': {
             'public': {
                 '/': 'GET - Documentation',
@@ -1554,7 +1618,7 @@ def index():
                 '/api/qr.php': 'GET - Create order and get QR (api_key, amount)',
                 '/api/verify-order.php': 'GET - Check order status (api_key, order_id)',
                 '/api/qr-image.php': 'GET - Get colored QR image (order_id)',
-                '/pay.php': 'GET - Payment page with colorful FamGateway style (order_id)',
+                '/pay.php': 'GET - Payment page with success UI (order_id)',
                 '/debug-emails': 'GET - Debug'
             }
         },
