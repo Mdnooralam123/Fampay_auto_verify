@@ -1,6 +1,6 @@
 """
-UPI Auto-Payment Verifier – Vercel Serverless Edition
-Complete error handling, safe Supabase/Gmail fallback, premium UI with success screen.
+KHAN PAY – Ultra-Fast UPI Payment Verifier
+Complete error handling, safe Supabase/Gmail fallback, real polling.
 """
 
 import os
@@ -12,7 +12,7 @@ import sys
 from io import BytesIO
 from datetime import datetime, timedelta, timezone
 
-from flask import Flask, request, jsonify, send_file, render_template_string
+from flask import Flask, request, jsonify, send_file, render_template_string, redirect, url_for
 from flask_cors import CORS
 
 # Optional imports with safe fallback
@@ -40,7 +40,7 @@ except ImportError:
 # ============================================
 CONFIG = {
     'UPI_ID': os.getenv('UPI_ID', '9304619487@fam'),
-    'PAYEE_NAME': os.getenv('PAYEE_NAME', 'Md Nooralam'),
+    'PAYEE_NAME': os.getenv('PAYEE_NAME', 'KHAN PAY'),
     'GMAIL_APP_PASSWORD': os.getenv('GMAIL_APP_PASSWORD', 'owjwtlotkfjnsftm'),
     'GMAIL_EMAIL': os.getenv('GMAIL_EMAIL', 'nkg166465@gmail.com'),
     'TIME_WINDOW_MINUTES': int(os.getenv('TIME_WINDOW_MINUTES', 5)),
@@ -78,7 +78,7 @@ def handle_exception(e):
         <!DOCTYPE html>
         <html>
         <head><title>Error</title>
-        <style>body{font-family:sans-serif;text-align:center;padding:2rem;background:#e8f4fd;color:#1a202c;}</style>
+        <style>body{font-family:sans-serif;text-align:center;padding:2rem;background:#f8fafc;color:#1a202c;}</style>
         </head>
         <body>
         <h1>⚠️ Something went wrong</h1>
@@ -542,7 +542,7 @@ def api_qr():
         order = db_get_order(order_id)
         if not order:
             return jsonify({'status': 'error', 'message': 'Failed to create order'}), 500
-        upi_intent = f"upi://pay?pa={CONFIG['UPI_ID']}&pn=FamPay&tr={order_id}&tn=Payment+for+Order+{order_id}&am={amount}&cu=INR"
+        upi_intent = f"upi://pay?pa={CONFIG['UPI_ID']}&pn=KHANPAY&tr={order_id}&tn=Payment+for+Order+{order_id}&am={amount}&cu=INR"
         base_url = request.url_root.rstrip('/')
         qr_url = f"{base_url}/api/qr-image.php?order_id={order_id}"
         checkout_url = f"{base_url}/pay.php?order_id={order_id}"
@@ -621,13 +621,13 @@ def qr_image():
         order = db_get_order(order_id)
         if not order:
             return jsonify({'status': 'error', 'message': 'Order not found'}), 404
-        upi_intent = f"upi://pay?pa={CONFIG['UPI_ID']}&pn=FamPay&tr={order_id}&tn=Payment+for+Order+{order_id}&am={order['amount']}&cu=INR"
+        upi_intent = f"upi://pay?pa={CONFIG['UPI_ID']}&pn=KHANPAY&tr={order_id}&tn=Payment+for+Order+{order_id}&am={order['amount']}&cu=INR"
         if qrcode is None:
             return jsonify({'status': 'error', 'message': 'QR library not available'}), 500
-        qr = qrcode.QRCode(box_size=10, border=4)
+        qr = qrcode.QRCode(box_size=12, border=6)
         qr.add_data(upi_intent)
         qr.make(fit=True)
-        img = qr.make_image(fill_color="#4a6cf7", back_color="#FFFFFF")
+        img = qr.make_image(fill_color="#000000", back_color="#FFFFFF")
         img_io = BytesIO()
         img.save(img_io, 'PNG')
         img_io.seek(0)
@@ -637,759 +637,199 @@ def qr_image():
         return jsonify({'status': 'error', 'message': 'Failed to generate QR'}), 500
 
 # ============================================
-# PAYMENT PAGE TEMPLATE – Proper Jinja2 with Success UI
+# CACHED STATUS ENDPOINT (ultra-fast polling)
 # ============================================
-PAYMENT_PAGE_TEMPLATE = '''
-<!DOCTYPE html>
-<html>
+status_cache = {}
+CACHE_TTL = 2  # seconds
+
+@app.route('/api/status', methods=['GET'])
+def api_status():
+    try:
+        order_id = request.args.get('orderId')
+        if not order_id:
+            return jsonify({'error': 'orderId required'}), 400
+
+        now = time.time()
+        if order_id in status_cache:
+            cached = status_cache[order_id]
+            if now - cached['timestamp'] < CACHE_TTL:
+                logger.info(f"Status cache hit for {order_id}")
+                return jsonify(cached['response'])
+
+        order = db_get_order(order_id)
+        if not order:
+            return jsonify({'error': 'Order not found'}), 404
+
+        now_ist = datetime.now(IST)
+        expires_ist = datetime.strptime(order['expires_at'], '%d-%m-%Y %H:%M:%S').replace(tzinfo=IST)
+        if now_ist > expires_ist and order['status'] == 'pending':
+            db_update_order(order_id, status='expired')
+            order = db_get_order(order_id)
+
+        if order['status'] == 'pending':
+            payment = search_gmail_payment(amount=order['amount'])
+            if payment:
+                utr = payment.get('utr')
+                if utr and not db_is_utr_verified(utr):
+                    db_update_order(order_id, status='verified', utr=utr,
+                                 transaction_id=payment.get('transaction_id'),
+                                 sender_name=payment.get('sender'),
+                                 payment_time=payment.get('date'))
+                    db_mark_utr_verified(utr, order_id)
+                    order = db_get_order(order_id)
+
+        response = {
+            'paid': order['status'] == 'verified',
+            'status': order['status'],
+            'amount': order['amount'],
+            'utr': order.get('utr'),
+            'sender': order.get('sender_name'),
+            'payment_time': order.get('payment_time')
+        }
+
+        status_cache[order_id] = {
+            'timestamp': now,
+            'response': response
+        }
+
+        return jsonify(response)
+    except Exception as e:
+        logger.error(f"api_status error: {e}")
+        return jsonify({'error': 'Internal error'}), 500
+
+# ============================================
+# KHAN PAY PAYMENT HTML – Beautiful UI with real polling (every 1s)
+# ============================================
+PAYMENT_HTML = '''
+<!doctype html>
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pay ₹{{ amount }} – FamGateway</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #e8f4fd;
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-            margin: 0;
-            color: #1a202c;
-            transition: background 0.4s;
-        }
-        .card {
-            background: white;
-            border-radius: 28px;
-            padding: 32px 28px;
-            max-width: 400px;
-            width: 100%;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.08);
-            position: relative;
-            transition: box-shadow 0.3s;
-            min-height: 480px;
-        }
-        .header { text-align: center; margin-bottom: 20px; }
-        .brand {
-            font-size: 22px;
-            font-weight: 700;
-            letter-spacing: -0.5px;
-            color: #1a202c;
-        }
-        .brand span { color: #4a6cf7; }
-
-        .order-total {
-            background: #f7fafc;
-            border-radius: 18px;
-            padding: 16px 12px;
-            text-align: center;
-            margin-bottom: 24px;
-        }
-        .order-total .label {
-            font-size: 13px;
-            color: #718096;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            font-weight: 500;
-        }
-        .order-total .amount {
-            font-size: 36px;
-            font-weight: 700;
-            color: #1a202c;
-            margin-top: 2px;
-        }
-        .order-total .currency {
-            font-size: 20px;
-            color: #718096;
-        }
-
-        .qr-section { text-align: center; margin: 16px 0 12px; }
-        .qr-wrapper {
-            display: inline-block;
-            padding: 8px;
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 0 30px rgba(0,0,0,0.05);
-        }
-        .qr-wrapper img {
-            display: block;
-            width: 180px;
-            height: 180px;
-            border-radius: 10px;
-            background: white;
-        }
-        .qr-section .sub {
-            font-size: 14px;
-            color: #718096;
-            margin-top: 10px;
-            font-weight: 500;
-        }
-        .qr-section .save-btn {
-            display: inline-block;
-            margin-top: 10px;
-            background: #f7fafc;
-            color: #2d3748;
-            padding: 6px 18px;
-            border-radius: 30px;
-            font-size: 13px;
-            font-weight: 500;
-            text-decoration: none;
-            border: 1px solid #e2e8f0;
-            transition: background 0.2s;
-        }
-        .qr-section .save-btn:hover { background: #edf2f7; }
-
-        .details {
-            margin: 18px 0;
-            border-top: 1px solid #edf2f7;
-            padding-top: 16px;
-        }
-        .detail-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 6px 0;
-            font-size: 15px;
-        }
-        .detail-row .label { color: #718096; }
-        .detail-row .value {
-            font-weight: 500;
-            color: #2d3748;
-        }
-        .timer-warning { color: #e53e3e; font-weight: 600; }
-        .glow-text {
-            animation: textGlow 3s ease-in-out infinite alternate;
-        }
-        @keyframes textGlow {
-            0% { text-shadow: 0 0 10px rgba(74,108,247,0.15); }
-            100% { text-shadow: 0 0 20px rgba(74,108,247,0.3); }
-        }
-
-        .status {
-            background: #f7fafc;
-            border-radius: 16px;
-            padding: 14px;
-            text-align: center;
-            margin: 14px 0;
-            font-size: 15px;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            border: 1px solid #e2e8f0;
-            transition: background 0.4s, border-color 0.4s, color 0.4s;
-        }
-        .status .spinner {
-            display: inline-block;
-            width: 18px;
-            height: 18px;
-            border: 3px solid #e2e8f0;
-            border-top-color: #4a6cf7;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        .check-link {
-            text-align: center;
-            margin-top: 10px;
-            font-size: 14px;
-        }
-        .check-link a {
-            color: #4a6cf7;
-            text-decoration: none;
-            font-weight: 500;
-        }
-        .check-link a:hover { text-decoration: underline; }
-
-        .footer {
-            text-align: center;
-            margin-top: 18px;
-            font-size: 13px;
-            color: #a0aec0;
-        }
-
-        /* ===== SUCCESS OVERLAY ===== */
-        .success-overlay {
-            display: none;
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: white;
-            border-radius: 28px;
-            padding: 32px 28px;
-            z-index: 10;
-            text-align: center;
-            animation: fadeInScale 0.5s ease forwards;
-        }
-        .success-overlay.active {
-            display: block;
-        }
-        @keyframes fadeInScale {
-            0% { opacity: 0; transform: scale(0.96); }
-            100% { opacity: 1; transform: scale(1); }
-        }
-
-        .success-icon {
-            position: relative;
-            width: 90px;
-            height: 90px;
-            margin: 0 auto 16px;
-        }
-        .success-icon .circle {
-            width: 100%;
-            height: 100%;
-            background: #48bb78;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 0 0 0 rgba(72,187,120,0.4);
-            animation: pulse-green 2s ease-in-out infinite;
-        }
-        .success-icon .circle svg {
-            width: 50px;
-            height: 50px;
-            fill: none;
-            stroke: white;
-            stroke-width: 4;
-            stroke-linecap: round;
-            stroke-linejoin: round;
-            stroke-dasharray: 50;
-            stroke-dashoffset: 50;
-            animation: drawCheck 0.5s ease forwards 0.3s;
-        }
-        @keyframes drawCheck {
-            100% { stroke-dashoffset: 0; }
-        }
-        @keyframes pulse-green {
-            0% { box-shadow: 0 0 0 0 rgba(72,187,120,0.4); }
-            70% { box-shadow: 0 0 0 20px rgba(72,187,120,0); }
-            100% { box-shadow: 0 0 0 0 rgba(72,187,120,0); }
-        }
-        /* Ripple ring */
-        .ripple {
-            position: absolute;
-            top: -10px;
-            left: -10px;
-            width: calc(100% + 20px);
-            height: calc(100% + 20px);
-            border: 2px solid rgba(72,187,120,0.3);
-            border-radius: 50%;
-            animation: rippleExpand 2s ease-out infinite;
-        }
-        @keyframes rippleExpand {
-            0% { transform: scale(0.8); opacity: 1; }
-            100% { transform: scale(1.4); opacity: 0; }
-        }
-
-        .success-title {
-            font-size: 24px;
-            font-weight: 700;
-            color: #1a202c;
-            margin: 12px 0 4px;
-        }
-        .success-sub {
-            color: #718096;
-            font-size: 16px;
-            margin-bottom: 16px;
-        }
-        .verified-badge {
-            display: inline-block;
-            background: #c6f6d5;
-            color: #276749;
-            padding: 6px 18px;
-            border-radius: 30px;
-            font-size: 14px;
-            font-weight: 600;
-            margin-bottom: 16px;
-        }
-
-        /* Confetti container (full page) */
-        .confetti-container {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 999;
-            overflow: hidden;
-        }
-        .confetti {
-            position: absolute;
-            width: 10px;
-            height: 10px;
-            opacity: 0.9;
-            animation: confettiFall linear forwards;
-        }
-        @keyframes confettiFall {
-            0% { transform: translateY(-10px) rotate(0deg) scale(1); opacity: 1; }
-            100% { transform: translateY(110vh) rotate(720deg) scale(0.5); opacity: 0; }
-        }
-
-        .btn {
-            display: inline-block;
-            background: #4a6cf7;
-            color: white;
-            padding: 10px 32px;
-            border-radius: 40px;
-            text-decoration: none;
-            font-weight: 600;
-            margin-top: 12px;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-        .btn:hover {
-            transform: scale(1.02);
-            box-shadow: 0 4px 12px rgba(74,108,247,0.3);
-        }
-
-        @media (max-width: 480px) {
-            .card { padding: 22px 16px; }
-            .qr-wrapper img { width: 150px; height: 150px; }
-            .order-total .amount { font-size: 30px; }
-            .success-icon { width: 70px; height: 70px; }
-            .success-icon .circle svg { width: 40px; height: 40px; }
-        }
-        @media (prefers-reduced-motion: reduce) {
-            .success-icon .circle, .ripple, .confetti { animation: none !important; }
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KHAN PAY — Secure Payment</title>
+  <meta name="description" content="Secure UPI payment verification" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root{--ink:#07162f;--blue:#0787f5;--cyan:#21b8ff;--green:#08c55b;--soft:#e8f6ff;--line:#cbe7fa;--white:#fff;--muted:#647792;--shadow:rgba(0,81,160,.14)}*{box-sizing:border-box}body{margin:0;color:var(--ink);font-family:Manrope,Arial,sans-serif;background-color:#f5f9ff;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:56px 56px}.page{min-height:100vh;padding:18px 14px 50px;overflow:hidden}.shell{position:relative;width:min(100%,500px);margin:auto;padding:24px;border:1.5px solid #61b9ff;border-radius:24px;background:rgba(229,245,255,.94);box-shadow:10px 12px 0 #32a9fa,0 28px 70px var(--shadow)}.brand{display:flex;align-items:center;gap:12px}.logo{display:grid;place-items:center;width:46px;height:46px;border-radius:13px;color:white;background:linear-gradient(135deg,var(--blue),var(--cyan));font-size:25px;font-weight:900;box-shadow:0 9px 22px rgba(0,133,245,.3)}.brand b{font-size:22px}.brand b em{color:var(--blue);font-style:normal}.brand small{display:block;color:var(--muted);font-size:10px;text-transform:uppercase}.secure{margin-left:auto;color:var(--green);font-weight:800;font-size:12px}.amount{margin:30px 0 20px}.live{display:inline-flex;align-items:center;gap:7px;margin-bottom:10px;padding:6px 10px;border-radius:99px;color:var(--blue);background:#d9efff;font-size:10px;font-weight:800;text-transform:uppercase}.live i{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 5px rgba(8,197,91,.12);animation:pulse 1.3s infinite}.amount p{margin:0 0 4px;color:var(--muted);font-size:12px;font-weight:800;text-transform:uppercase}.amount h1{margin:0;font-size:52px;line-height:1;font-weight:800}.amount h1 small{font-size:16px;color:var(--muted)}.card{padding:25px 20px 16px;text-align:center;border:1px solid #dbe8f2;border-radius:21px;background:white;box-shadow:0 15px 42px rgba(5,50,90,.08)}.qrbox{position:relative;width:min(100%,280px);aspect-ratio:1;margin:auto;padding:12px;overflow:hidden;border-radius:14px;background:white;box-shadow:0 0 0 1px #d9e6f0,0 0 42px rgba(7,135,245,.16);display:flex;align-items:center;justify-content:center}.qrbox img{display:block;width:100%;height:100%;object-fit:contain;border-radius:6px}.scan{position:absolute;z-index:3;left:10px;right:10px;top:10px;height:2px;background:var(--blue);box-shadow:0 0 10px var(--blue);animation:scan 3s ease-in-out infinite}.hint{margin:18px 0 13px}.hint b{display:block;font-size:12px;text-transform:uppercase}.hint span{font-size:10px;color:var(--muted)}button{border:0;font:inherit;cursor:pointer}.save,.done{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:43px;padding:0 22px;border-radius:11px;font-weight:700}.save{color:#075aa8;background:#edf7ff;box-shadow:0 3px 8px rgba(4,70,130,.12)}dl{margin:20px 0 0;text-align:left}dl div{display:grid;grid-template-columns:88px 1fr;gap:10px;padding:14px 0;border-top:1px solid #dce7ef;font-size:13px}dt{color:var(--muted);font-weight:600}dd{margin:0;text-align:right;font-weight:800;overflow-wrap:anywhere}.checking{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border-radius:99px;color:var(--blue);background:#dff1ff;white-space:nowrap}.checking i{width:8px;height:8px;border-radius:50%;background:var(--blue);box-shadow:0 0 0 5px rgba(7,135,245,.12);animation:pulse 1.2s infinite}.note{text-align:center;color:var(--muted);font-size:10px}.modal{position:fixed;z-index:10;inset:0;display:none;place-items:center;padding:16px;background:rgba(2,13,26,.76);backdrop-filter:blur(7px)}.modal.open{display:grid}.popup{position:relative;width:min(100%,430px);padding:38px 32px 32px;overflow:hidden;text-align:center;border:1px solid #8ee6b5;border-radius:24px;background:#f4fbff;box-shadow:0 30px 100px rgba(0,0,0,.35);animation:pop .55s cubic-bezier(.2,.9,.3,1.2)}.popup:before{content:"";position:absolute;inset:0 0 auto;height:6px;background:linear-gradient(90deg,var(--blue),var(--green),var(--cyan))}.check{display:grid;place-items:center;width:105px;height:105px;margin:0 auto 24px;border-radius:50%;color:white;background:var(--green);font-size:55px;box-shadow:0 0 0 12px #d9f8e8,0 0 46px rgba(8,197,91,.45);animation:float 3s 1s infinite}.popup label{color:var(--blue);font-size:10px;font-weight:800;text-transform:uppercase}.popup h2{margin:8px 0;color:var(--green);font-size:27px}.popup>p{margin:0 0 20px;color:var(--muted);font-size:14px}.receipt{padding:8px 16px;margin-bottom:25px;border-radius:12px;background:#edf5fa}.receipt div{display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid #dbe7ef;font-size:11px;text-align:left}.receipt div:last-child{border:0}.receipt span{color:var(--muted)}.receipt b{overflow-wrap:anywhere;text-align:right}.paid{color:var(--green)}.done{width:100%;color:white;background:linear-gradient(90deg,var(--blue),var(--cyan));box-shadow:0 8px 20px rgba(7,135,245,.25)}@keyframes scan{0%,100%{transform:translateY(0);opacity:.15}50%{transform:translateY(200px);opacity:.9}}@keyframes pulse{50%{opacity:.35;transform:scale(.8)}}@keyframes pop{from{opacity:0;transform:scale(.6) rotate(-5deg)}to{opacity:1;transform:scale(1)}}@keyframes float{50%{transform:translateY(-6px)}}@media(max-width:430px){.shell{padding:18px;box-shadow:7px 8px 0 #32a9fa}.amount h1{font-size:46px}.card{padding:18px 16px}.qrbox{width:min(100%,220px)}.popup{padding:34px 22px 25px}}
+  </style>
 </head>
 <body>
-    <div class="card" id="paymentCard">
-        <!-- PENDING UI -->
-        <div id="pendingUI">
-            <div class="header"><div class="brand">Fam<span>Gateway</span>™</div></div>
-            <div class="order-total">
-                <div class="label">ORDER TOTAL</div>
-                <div class="amount">₹ {{ amount }} <span class="currency">INR</span></div>
-            </div>
-            <div class="qr-section">
-                <div class="qr-wrapper"><img id="qr-img" src="{{ qr_url }}" alt="QR Code"></div>
-                <div class="sub">SCAN WITH ANY UPI APP</div>
-                <a href="{{ qr_url }}" download="qr_{{ order_id }}.png" class="save-btn">🔗 Save QR</a>
-            </div>
-            <div class="details">
-                <div class="detail-row"><span class="label">Merchant</span><span class="value">{{ merchant }}</span></div>
-                <div class="detail-row"><span class="label">Order ID</span><span class="value">{{ order_id }}</span></div>
-                <div class="detail-row"><span class="label">Expires In</span><span class="value glow-text" id="timer">--:--</span></div>
-            </div>
-            <div class="status" id="status">
-                <span class="spinner"></span>
-                <span id="status-text">Waiting for payment…</span>
-            </div>
-            <div class="check-link"><a href="{{ verify_url }}" target="_blank">Check Status</a></div>
-            <div class="footer">⚡ Auto‑verified instantly after UPI payment</div>
-        </div>
+<main class="page"><section class="shell">
+  <header class="brand"><div class="logo">Ҝ</div><div><b>KHAN <em>PAY</em></b><small>Secure checkout</small></div><span class="secure">✓ Secure</span></header>
+  <div class="amount"><span class="live"><i></i>Live payment request</span><p>Order total</p><h1>₹<span id="amount">1.00</span> <small>INR</small></h1></div>
+  <div class="card">
+    <div class="qrbox"><div class="scan"></div><img id="qr" src="" alt="UPI QR Code"></div>
+    <div class="hint"><b>Scan with any UPI app</b><span>Google Pay, PhonePe, Paytm or BHIM</span></div>
+    <button class="save" id="save">⇩ Save QR</button>
+    <dl><div><dt>Merchant</dt><dd id="merchant">KHAN PAY</dd></div><div><dt>Order ID</dt><dd id="order">PF-K6I078RN</dd></div><div><dt>Expires in</dt><dd id="timer">04:22</dd></div><div><dt>Verification</dt><dd><span class="checking" id="statusBadge"><i></i>Waiting for payment...</span></dd></div></dl>
+  </div>
+  <p class="note">✓ Protected with bank-grade security</p>
+</section></main>
+<div class="modal" id="modal"><section class="popup" role="dialog" aria-modal="true"><div class="check">✓</div><label>Transaction complete</label><h2>Payment successful!</h2><p>Your payment of ₹<span id="paidAmount">1.00</span> has been received.</p><div class="receipt"><div><span>Paid to</span><b>KHAN PAY</b></div><div><span>Order ID</span><b id="paidOrder"></b></div><div><span>Status</span><b class="paid">✓ Payment received</b></div></div><button class="done" id="done">Done</button></section></div>
+<script>
+  // Read URL parameters
+  const q=new URLSearchParams(location.search);
+  const data={
+    amount: q.get('amount') || '1.00',
+    merchant: q.get('merchant') || 'KHAN PAY',
+    order: q.get('orderId') || 'PF-K6I078RN',
+    upi: q.get('upi') || 'merchant@upi',
+    status: q.get('status') || 'pending'
+  };
+  const $=id=>document.getElementById(id);
+  $('amount').textContent=data.amount;
+  $('merchant').textContent=data.merchant;
+  $('order').textContent=data.order;
+  $('paidAmount').textContent=data.amount;
+  $('paidOrder').textContent=data.order;
 
-        <!-- SUCCESS OVERLAY -->
-        <div class="success-overlay" id="successOverlay">
-            <div class="success-icon">
-                <div class="ripple"></div>
-                <div class="circle">
-                    <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-                </div>
-            </div>
-            <div class="success-title">Payment Successful!</div>
-            <div class="success-sub">Thank you for your payment.</div>
-            <div class="verified-badge">✓ Payment received</div>
-            <div class="details" style="text-align:left;">
-                <div class="detail-row"><span class="label">Order ID</span><span class="value">{{ order_id }}</span></div>
-                <div class="detail-row"><span class="label">Amount</span><span class="value">₹ {{ amount }}</span></div>
-            </div>
-            <a href="/" class="btn">Done</a>
-        </div>
-    </div>
+  // Set QR image from API
+  const qrImg = $('qr');
+  qrImg.src = '/api/qr-image.php?order_id=' + encodeURIComponent(data.order);
 
-    <!-- Confetti container -->
-    <div class="confetti-container" id="confettiContainer"></div>
+  // Timer (expires in ~5 minutes)
+  let left=262;
+  setInterval(()=>{left=Math.max(0,left-1);$('timer').textContent=String(Math.floor(left/60)).padStart(2,'0')+':'+String(left%60).padStart(2,'0')},1000);
 
-    <script>
-        // Timer
-        var expiresStr = "{{ expires_at }}";
-        var datePart, timePart, dd, mm, yyyy, hh, min, sec;
-        if (expiresStr) {
-            var parts = expiresStr.split(' ');
-            datePart = parts[0];
-            timePart = parts[1];
-            var dateParts = datePart.split('-');
-            dd = parseInt(dateParts[0], 10);
-            mm = parseInt(dateParts[1], 10) - 1;
-            yyyy = parseInt(dateParts[2], 10);
-            var timeParts = timePart.split(':');
-            hh = parseInt(timeParts[0], 10);
-            min = parseInt(timeParts[1], 10);
-            sec = parseInt(timeParts[2], 10);
-        } else {
-            var now = new Date();
-            now.setMinutes(now.getMinutes() + 5);
-            yyyy = now.getFullYear();
-            mm = now.getMonth();
-            dd = now.getDate();
-            hh = now.getHours();
-            min = now.getMinutes();
-            sec = now.getSeconds();
+  // Save QR – download the image from the API
+  $('save').onclick=()=>{
+    fetch(qrImg.src)
+      .then(res=>res.blob())
+      .then(blob=>{
+        const a=document.createElement('a');
+        a.download=data.order+'-qr.png';
+        a.href=URL.createObjectURL(blob);
+        a.click();
+        URL.revokeObjectURL(a.href);
+      })
+      .catch(()=>{
+        // fallback: open image in new tab
+        window.open(qrImg.src, '_blank');
+      });
+  };
+
+  // Success modal
+  const modal = document.getElementById('modal');
+  const showSuccess = () => modal.classList.add('open');
+  const hideSuccess = () => modal.classList.remove('open');
+  document.getElementById('done').onclick = hideSuccess;
+
+  // ---- AUTO POLLING (real verification) ----
+  const statusBadge = document.getElementById('statusBadge');
+  const statusLabel = statusBadge;
+  let isSuccessShown = false;
+
+  function pollStatus() {
+    if (isSuccessShown) return;
+    fetch('/api/status?orderId=' + encodeURIComponent(data.order))
+      .then(res => res.json())
+      .then(resp => {
+        if (resp.error) {
+          console.warn('Status error:', resp.error);
+          return;
         }
-        var expires = new Date(yyyy, mm, dd, hh, min, sec).getTime();
-        var timerEl = document.getElementById('timer');
-        function updateTimer() {
-            var now = Date.now();
-            var diff = expires - now;
-            if (diff < 0) {
-                timerEl.textContent = 'Expired';
-                timerEl.className = 'timer-warning';
-                document.getElementById('status').className = 'status expired';
-                document.getElementById('status-text').textContent = '⏰ Order expired';
-                // stop polling if expired
-                if (window.checkInterval) clearInterval(window.checkInterval);
-                return;
-            }
-            var mins = Math.floor(diff / 60000);
-            var secs = Math.floor((diff % 60000) / 1000);
-            timerEl.textContent = String(mins).padStart(2,'0') + ':' + String(secs).padStart(2,'0');
+        if (resp.paid === true) {
+          isSuccessShown = true;
+          showSuccess();
+          statusLabel.innerHTML = '✅ Payment received';
+          statusLabel.style.background = '#d4edda';
+          statusLabel.style.color = '#155724';
+          return;
         }
-        updateTimer();
-        setInterval(updateTimer, 1000);
-
-        // Polling
-        var verifyUrl = "{{ verify_url }}";
-        var statusEl = document.getElementById('status');
-        var statusText = document.getElementById('status-text');
-        var successOverlay = document.getElementById('successOverlay');
-        var pendingUI = document.getElementById('pendingUI');
-        var confettiContainer = document.getElementById('confettiContainer');
-        var isSuccess = false;
-        var checkInterval;
-
-        function showSuccess() {
-            if (isSuccess) return;
-            isSuccess = true;
-            if (checkInterval) clearInterval(checkInterval);
-            // Hide pending, show success overlay
-            pendingUI.style.display = 'none';
-            successOverlay.classList.add('active');
-            // Launch confetti
-            launchConfetti();
+        if (resp.status === 'expired') {
+          statusLabel.innerHTML = '⏰ Expired';
+          statusLabel.style.background = '#f8d7da';
+          statusLabel.style.color = '#721c24';
+          return;
         }
+        // Still pending
+        statusLabel.innerHTML = '⏳ Waiting for payment…';
+        statusLabel.style.background = '#dff1ff';
+        statusLabel.style.color = '#0787f5';
+      })
+      .catch(err => console.warn('Poll error:', err));
+  }
 
-        function launchConfetti() {
-            var colors = ['#48bb78', '#4a6cf7', '#ed64a6', '#f6ad55', '#63b3ed', '#9f7aea', '#fc8181', '#68d391'];
-            for (var i = 0; i < 80; i++) {
-                var el = document.createElement('div');
-                el.className = 'confetti';
-                el.style.left = Math.random() * 100 + '%';
-                el.style.width = (Math.random() * 10 + 5) + 'px';
-                el.style.height = (Math.random() * 10 + 5) + 'px';
-                el.style.background = colors[Math.floor(Math.random() * colors.length)];
-                el.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px';
-                el.style.animationDuration = (Math.random() * 2 + 1.5) + 's';
-                el.style.animationDelay = (Math.random() * 1.5) + 's';
-                confettiContainer.appendChild(el);
-            }
-        }
-
-        function checkStatus() {
-            if (isSuccess) return;
-            fetch(verifyUrl)
-                .then(function(res) { return res.json(); })
-                .then(function(data) {
-                    if (data.data && data.data.status === 'verified') {
-                        showSuccess();
-                    } else if (data.data && data.data.status === 'expired') {
-                        if (checkInterval) clearInterval(checkInterval);
-                        statusEl.className = 'status expired';
-                        statusText.textContent = '⏰ Order expired';
-                    }
-                })
-                .catch(function() { /* ignore network errors, keep polling */ });
-        }
-
-        // Start polling every 1 second
-        checkStatus(); // immediate first check
-        checkInterval = setInterval(checkStatus, 1000);
-    </script>
-</body>
-</html>
+  // If status is already 'verified', show success immediately
+  if (data.status === 'verified') {
+    isSuccessShown = true;
+    showSuccess();
+    statusLabel.innerHTML = '✅ Payment received';
+    statusLabel.style.background = '#d4edda';
+    statusLabel.style.color = '#155724';
+  } else {
+    // Poll every 1 second for reliable verification
+    pollStatus();
+    setInterval(pollStatus, 1000);
+  }
+</script>
+</body></html>
 '''
 
 # ============================================
-# SUCCESS PAGE (if order already verified)
-# ============================================
-SUCCESS_PAGE = '''
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Payment Successful 🎉</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #e8f4fd;
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-            margin: 0;
-            color: #1a202c;
-            overflow: hidden;
-        }
-        .card {
-            background: white;
-            border-radius: 28px;
-            padding: 40px 32px;
-            max-width: 400px;
-            width: 100%;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.08);
-            text-align: center;
-            animation: popIn 0.5s ease forwards;
-        }
-        @keyframes popIn {
-            0% { transform: scale(0.9); opacity: 0; }
-            100% { transform: scale(1); opacity: 1; }
-        }
-        .success-icon {
-            position: relative;
-            width: 90px;
-            height: 90px;
-            margin: 0 auto 16px;
-        }
-        .success-icon .circle {
-            width: 100%;
-            height: 100%;
-            background: #48bb78;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 0 0 0 rgba(72,187,120,0.4);
-            animation: pulse-green 2s ease-in-out infinite;
-        }
-        .success-icon .circle svg {
-            width: 50px;
-            height: 50px;
-            fill: none;
-            stroke: white;
-            stroke-width: 4;
-            stroke-linecap: round;
-            stroke-linejoin: round;
-            stroke-dasharray: 50;
-            stroke-dashoffset: 50;
-            animation: drawCheck 0.5s ease forwards 0.3s;
-        }
-        @keyframes drawCheck {
-            100% { stroke-dashoffset: 0; }
-        }
-        @keyframes pulse-green {
-            0% { box-shadow: 0 0 0 0 rgba(72,187,120,0.4); }
-            70% { box-shadow: 0 0 0 20px rgba(72,187,120,0); }
-            100% { box-shadow: 0 0 0 0 rgba(72,187,120,0); }
-        }
-        .ripple {
-            position: absolute;
-            top: -10px;
-            left: -10px;
-            width: calc(100% + 20px);
-            height: calc(100% + 20px);
-            border: 2px solid rgba(72,187,120,0.3);
-            border-radius: 50%;
-            animation: rippleExpand 2s ease-out infinite;
-        }
-        @keyframes rippleExpand {
-            0% { transform: scale(0.8); opacity: 1; }
-            100% { transform: scale(1.4); opacity: 0; }
-        }
-        h1 {
-            font-size: 24px;
-            font-weight: 700;
-            color: #1a202c;
-            margin: 12px 0 4px;
-        }
-        .sub {
-            color: #718096;
-            font-size: 16px;
-            margin-bottom: 16px;
-        }
-        .verified-badge {
-            display: inline-block;
-            background: #c6f6d5;
-            color: #276749;
-            padding: 6px 18px;
-            border-radius: 30px;
-            font-size: 14px;
-            font-weight: 600;
-            margin-bottom: 16px;
-        }
-        .detail-box {
-            background: #f7fafc;
-            border-radius: 16px;
-            padding: 16px;
-            text-align: left;
-            margin: 16px 0;
-        }
-        .detail-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 6px 0;
-            font-size: 15px;
-        }
-        .detail-row .label { color: #718096; }
-        .detail-row .value { font-weight: 500; color: #2d3748; }
-        .btn {
-            display: inline-block;
-            background: #4a6cf7;
-            color: white;
-            padding: 10px 32px;
-            border-radius: 40px;
-            text-decoration: none;
-            font-weight: 600;
-            margin-top: 12px;
-            transition: transform 0.2s;
-        }
-        .btn:hover { transform: scale(1.02); }
-        .confetti-container {
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            pointer-events: none;
-            z-index: 999;
-            overflow: hidden;
-        }
-        .confetti {
-            position: absolute;
-            width: 10px; height: 10px;
-            opacity: 0.9;
-            animation: confettiFall linear forwards;
-        }
-        @keyframes confettiFall {
-            0% { transform: translateY(-10px) rotate(0deg) scale(1); opacity: 1; }
-            100% { transform: translateY(110vh) rotate(720deg) scale(0.5); opacity: 0; }
-        }
-        @media (max-width: 480px) {
-            .card { padding: 28px 18px; }
-            .success-icon { width: 70px; height: 70px; }
-            .success-icon .circle svg { width: 40px; height: 40px; }
-        }
-    </style>
-</head>
-<body>
-    <div class="confetti-container" id="confetti"></div>
-    <div class="card">
-        <div class="success-icon">
-            <div class="ripple"></div>
-            <div class="circle">
-                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-            </div>
-        </div>
-        <h1>Payment Successful!</h1>
-        <p class="sub">Thank you for your payment.</p>
-        <div class="verified-badge">✓ Payment received</div>
-        <div class="detail-box">
-            <div class="detail-row"><span class="label">Order ID</span><span class="value">{{ order_id }}</span></div>
-            <div class="detail-row"><span class="label">Amount</span><span class="value">₹ {{ amount }}</span></div>
-            <div class="detail-row"><span class="label">UTR</span><span class="value">{{ utr }}</span></div>
-            <div class="detail-row"><span class="label">Payment Time</span><span class="value">{{ payment_time }}</span></div>
-            <div class="detail-row"><span class="label">Sender</span><span class="value">{{ sender }}</span></div>
-        </div>
-        <a href="/" class="btn">Done</a>
-    </div>
-    <script>
-        (function() {
-            var container = document.getElementById('confetti');
-            var colors = ['#48bb78', '#4a6cf7', '#ed64a6', '#f6ad55', '#63b3ed', '#9f7aea', '#fc8181', '#68d391'];
-            for (var i = 0; i < 80; i++) {
-                var el = document.createElement('div');
-                el.className = 'confetti';
-                el.style.left = Math.random() * 100 + '%';
-                el.style.width = (Math.random() * 10 + 5) + 'px';
-                el.style.height = (Math.random() * 10 + 5) + 'px';
-                el.style.background = colors[Math.floor(Math.random() * colors.length)];
-                el.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px';
-                el.style.animationDuration = (Math.random() * 2 + 1.5) + 's';
-                el.style.animationDelay = (Math.random() * 1.5) + 's';
-                container.appendChild(el);
-            }
-        })();
-    </script>
-</body>
-</html>
-'''
-
-# ============================================
-# EXPIRED PAGE
-# ============================================
-EXPIRED_PAGE = '''
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Order Expired ⏰</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #e8f4fd;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            padding: 20px;
-        }
-        .card {
-            background: white;
-            border-radius: 28px;
-            padding: 40px 32px;
-            max-width: 420px;
-            width: 100%;
-            text-align: center;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.08);
-        }
-        .icon { font-size: 64px; margin-bottom: 16px; }
-        h1 { color: #e53e3e; font-size: 26px; margin-bottom: 8px; }
-        .sub { color: #718096; font-size: 16px; margin-bottom: 20px; }
-        .detail { background: #f7fafc; border-radius: 12px; padding: 16px; margin: 16px 0; text-align:left; }
-        .detail .row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 15px; }
-        .row .label { color: #718096; }
-        .row .value { font-weight: 500; }
-        .btn {
-            display: inline-block;
-            background: #4a6cf7;
-            color: white;
-            padding: 10px 32px;
-            border-radius: 40px;
-            text-decoration: none;
-            font-weight: 600;
-            transition: transform 0.2s;
-        }
-        .btn:hover { transform: scale(1.02); }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <div class="icon">⏰</div>
-        <h1>Order Expired</h1>
-        <p class="sub">This payment session has expired. Please create a new order.</p>
-        <div class="detail">
-            <div class="row"><span class="label">Order ID</span><span class="value">{{ order_id }}</span></div>
-            <div class="row"><span class="label">Amount</span><span class="value">₹ {{ amount }}</span></div>
-            <div class="row"><span class="label">Expired at</span><span class="value">{{ expires_at }}</span></div>
-        </div>
-        <a href="/" class="btn">Go Home</a>
-    </div>
-</body>
-</html>
-'''
-
-# ============================================
-# PAYMENT PAGE ROUTE
+# PAYMENT PAGE ROUTE – redirects to payment HTML with query params
 # ============================================
 @app.route('/pay.php', methods=['GET'])
 def pay_page():
@@ -1401,62 +841,29 @@ def pay_page():
         if not order:
             return "Order not found", 404
 
-        base_url = request.url_root.rstrip('/')
-        qr_url = f"{base_url}/api/qr-image.php?order_id={order_id}"
-        verify_url = f"{base_url}/api/verify-order.php?api_key={order['api_key']}&order_id={order_id}"
         amount = order['amount']
-        expires_at = order['expires_at']
         merchant = CONFIG['PAYEE_NAME']
+        upi = CONFIG['UPI_ID']
+        orderId = order['order_id']
         status = order['status']
 
-        # If order already verified, show success page directly
-        if status == 'verified':
-            return render_template_string(SUCCESS_PAGE,
-                order_id=order_id,
-                utr=order.get('utr', 'N/A'),
-                amount=amount,
-                merchant=merchant,
-                payment_time=order.get('payment_time', ''),
-                sender=order.get('sender_name', '')
-            )
-
-        # Check expiry
-        now_ist = datetime.now(IST)
-        expires_ist = datetime.strptime(expires_at, '%d-%m-%Y %H:%M:%S').replace(tzinfo=IST)
-        if now_ist > expires_ist:
-            if order['status'] == 'pending':
-                db_update_order(order_id, status='expired')
-            return render_template_string(EXPIRED_PAGE,
-                order_id=order_id,
-                amount=amount,
-                merchant=merchant,
-                expires_at=expires_at
-            )
-
-        # Pending – show the payment page with polling
-        return render_template_string(PAYMENT_PAGE_TEMPLATE,
-            amount=amount,
-            qr_url=qr_url,
-            order_id=order_id,
-            merchant=merchant,
-            expires_at=expires_at,
-            verify_url=verify_url
-        )
+        payment_url = url_for('serve_payment_html',
+                              amount=amount,
+                              merchant=merchant,
+                              orderId=orderId,
+                              upi=upi,
+                              status=status)
+        return redirect(payment_url)
     except Exception as e:
         logger.error(f"pay_page error: {e}")
-        return render_template_string('''
-            <!DOCTYPE html>
-            <html>
-            <head><title>Error</title>
-            <style>body{font-family:sans-serif;text-align:center;padding:2rem;background:#e8f4fd;color:#1a202c;}</style>
-            </head>
-            <body>
-            <h1>⚠️ Unable to load payment page</h1>
-            <p>Please check the order ID and try again.</p>
-            <p><a href="/" style="color:#4a6cf7;">Go Home</a></p>
-            </body>
-            </html>
-        ''', 500)
+        return "Internal error", 500
+
+# ============================================
+# ROUTE TO SERVE THE PAYMENT HTML (no processing, just returns the HTML)
+# ============================================
+@app.route('/payment')
+def serve_payment_html():
+    return PAYMENT_HTML
 
 # ============================================
 # OTHER ENDPOINTS
@@ -1566,13 +973,13 @@ def generate_qr_legacy():
             amount = float(amount)
         except:
             return jsonify({'status': 'error', 'message': 'Invalid amount'}), 400
-        upi_intent = f"upi://pay?pa={CONFIG['UPI_ID']}&pn=FamPay&am={amount}&cu=INR"
+        upi_intent = f"upi://pay?pa={CONFIG['UPI_ID']}&pn=KHANPAY&am={amount}&cu=INR"
         if qrcode is None:
             return jsonify({'status': 'error', 'message': 'QR library not available'}), 500
         qr = qrcode.QRCode(box_size=10, border=4)
         qr.add_data(upi_intent)
         qr.make(fit=True)
-        img = qr.make_image(fill_color="#4a6cf7", back_color="#FFFFFF")
+        img = qr.make_image(fill_color="#000000", back_color="#FFFFFF")
         img_io = BytesIO()
         img.save(img_io, 'PNG')
         img_io.seek(0)
@@ -1603,9 +1010,9 @@ def health():
 def index():
     base_url = request.url_root.rstrip('/')
     return jsonify({
-        'name': 'UPI Auto-Payment Verifier',
+        'name': 'KHAN PAY Payment Verifier',
         'version': '5.0.0',
-        'description': 'Premium UI with real payment verification.',
+        'description': 'Premium UI with real payment verification (1s polling).',
         'endpoints': {
             'public': {
                 '/': 'GET - Documentation',
@@ -1618,7 +1025,7 @@ def index():
                 '/api/qr.php': 'GET - Create order and get QR (api_key, amount)',
                 '/api/verify-order.php': 'GET - Check order status (api_key, order_id)',
                 '/api/qr-image.php': 'GET - Get colored QR image (order_id)',
-                '/pay.php': 'GET - Payment page with success UI (order_id)',
+                '/pay.php': 'GET - Payment page (order_id)',
                 '/debug-emails': 'GET - Debug'
             }
         },
