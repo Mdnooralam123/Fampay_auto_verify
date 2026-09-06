@@ -1,6 +1,7 @@
 """
 KHAN PAY – Ultra-Fast UPI Payment Verifier
 Complete error handling, safe Supabase/Gmail fallback, real polling.
+QR generated client-side for reliability.
 """
 
 import os
@@ -614,6 +615,7 @@ def api_verify_order():
 
 @app.route('/api/qr-image.php', methods=['GET'])
 def qr_image():
+    # Keep for backward compatibility, but payment page now uses client-side QR
     try:
         order_id = request.args.get('order_id')
         if not order_id:
@@ -698,7 +700,7 @@ def api_status():
         return jsonify({'error': 'Internal error'}), 500
 
 # ============================================
-# KHAN PAY PAYMENT HTML – Beautiful UI with real polling (every 1s)
+# KHAN PAY PAYMENT HTML – Client-side QR generation
 # ============================================
 PAYMENT_HTML = '''
 <!doctype html>
@@ -711,8 +713,9 @@ PAYMENT_HTML = '''
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <style>
-    :root{--ink:#07162f;--blue:#0787f5;--cyan:#21b8ff;--green:#08c55b;--soft:#e8f6ff;--line:#cbe7fa;--white:#fff;--muted:#647792;--shadow:rgba(0,81,160,.14)}*{box-sizing:border-box}body{margin:0;color:var(--ink);font-family:Manrope,Arial,sans-serif;background-color:#f5f9ff;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:56px 56px}.page{min-height:100vh;padding:18px 14px 50px;overflow:hidden}.shell{position:relative;width:min(100%,500px);margin:auto;padding:24px;border:1.5px solid #61b9ff;border-radius:24px;background:rgba(229,245,255,.94);box-shadow:10px 12px 0 #32a9fa,0 28px 70px var(--shadow)}.brand{display:flex;align-items:center;gap:12px}.logo{display:grid;place-items:center;width:46px;height:46px;border-radius:13px;color:white;background:linear-gradient(135deg,var(--blue),var(--cyan));font-size:25px;font-weight:900;box-shadow:0 9px 22px rgba(0,133,245,.3)}.brand b{font-size:22px}.brand b em{color:var(--blue);font-style:normal}.brand small{display:block;color:var(--muted);font-size:10px;text-transform:uppercase}.secure{margin-left:auto;color:var(--green);font-weight:800;font-size:12px}.amount{margin:30px 0 20px}.live{display:inline-flex;align-items:center;gap:7px;margin-bottom:10px;padding:6px 10px;border-radius:99px;color:var(--blue);background:#d9efff;font-size:10px;font-weight:800;text-transform:uppercase}.live i{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 5px rgba(8,197,91,.12);animation:pulse 1.3s infinite}.amount p{margin:0 0 4px;color:var(--muted);font-size:12px;font-weight:800;text-transform:uppercase}.amount h1{margin:0;font-size:52px;line-height:1;font-weight:800}.amount h1 small{font-size:16px;color:var(--muted)}.card{padding:25px 20px 16px;text-align:center;border:1px solid #dbe8f2;border-radius:21px;background:white;box-shadow:0 15px 42px rgba(5,50,90,.08)}.qrbox{position:relative;width:min(100%,280px);aspect-ratio:1;margin:auto;padding:12px;overflow:hidden;border-radius:14px;background:white;box-shadow:0 0 0 1px #d9e6f0,0 0 42px rgba(7,135,245,.16);display:flex;align-items:center;justify-content:center}.qrbox img{display:block;width:100%;height:100%;object-fit:contain;border-radius:6px}.scan{position:absolute;z-index:3;left:10px;right:10px;top:10px;height:2px;background:var(--blue);box-shadow:0 0 10px var(--blue);animation:scan 3s ease-in-out infinite}.hint{margin:18px 0 13px}.hint b{display:block;font-size:12px;text-transform:uppercase}.hint span{font-size:10px;color:var(--muted)}button{border:0;font:inherit;cursor:pointer}.save,.done{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:43px;padding:0 22px;border-radius:11px;font-weight:700}.save{color:#075aa8;background:#edf7ff;box-shadow:0 3px 8px rgba(4,70,130,.12)}dl{margin:20px 0 0;text-align:left}dl div{display:grid;grid-template-columns:88px 1fr;gap:10px;padding:14px 0;border-top:1px solid #dce7ef;font-size:13px}dt{color:var(--muted);font-weight:600}dd{margin:0;text-align:right;font-weight:800;overflow-wrap:anywhere}.checking{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border-radius:99px;color:var(--blue);background:#dff1ff;white-space:nowrap}.checking i{width:8px;height:8px;border-radius:50%;background:var(--blue);box-shadow:0 0 0 5px rgba(7,135,245,.12);animation:pulse 1.2s infinite}.note{text-align:center;color:var(--muted);font-size:10px}.modal{position:fixed;z-index:10;inset:0;display:none;place-items:center;padding:16px;background:rgba(2,13,26,.76);backdrop-filter:blur(7px)}.modal.open{display:grid}.popup{position:relative;width:min(100%,430px);padding:38px 32px 32px;overflow:hidden;text-align:center;border:1px solid #8ee6b5;border-radius:24px;background:#f4fbff;box-shadow:0 30px 100px rgba(0,0,0,.35);animation:pop .55s cubic-bezier(.2,.9,.3,1.2)}.popup:before{content:"";position:absolute;inset:0 0 auto;height:6px;background:linear-gradient(90deg,var(--blue),var(--green),var(--cyan))}.check{display:grid;place-items:center;width:105px;height:105px;margin:0 auto 24px;border-radius:50%;color:white;background:var(--green);font-size:55px;box-shadow:0 0 0 12px #d9f8e8,0 0 46px rgba(8,197,91,.45);animation:float 3s 1s infinite}.popup label{color:var(--blue);font-size:10px;font-weight:800;text-transform:uppercase}.popup h2{margin:8px 0;color:var(--green);font-size:27px}.popup>p{margin:0 0 20px;color:var(--muted);font-size:14px}.receipt{padding:8px 16px;margin-bottom:25px;border-radius:12px;background:#edf5fa}.receipt div{display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid #dbe7ef;font-size:11px;text-align:left}.receipt div:last-child{border:0}.receipt span{color:var(--muted)}.receipt b{overflow-wrap:anywhere;text-align:right}.paid{color:var(--green)}.done{width:100%;color:white;background:linear-gradient(90deg,var(--blue),var(--cyan));box-shadow:0 8px 20px rgba(7,135,245,.25)}@keyframes scan{0%,100%{transform:translateY(0);opacity:.15}50%{transform:translateY(200px);opacity:.9}}@keyframes pulse{50%{opacity:.35;transform:scale(.8)}}@keyframes pop{from{opacity:0;transform:scale(.6) rotate(-5deg)}to{opacity:1;transform:scale(1)}}@keyframes float{50%{transform:translateY(-6px)}}@media(max-width:430px){.shell{padding:18px;box-shadow:7px 8px 0 #32a9fa}.amount h1{font-size:46px}.card{padding:18px 16px}.qrbox{width:min(100%,220px)}.popup{padding:34px 22px 25px}}
+    :root{--ink:#07162f;--blue:#0787f5;--cyan:#21b8ff;--green:#08c55b;--soft:#e8f6ff;--line:#cbe7fa;--white:#fff;--muted:#647792;--shadow:rgba(0,81,160,.14)}*{box-sizing:border-box}body{margin:0;color:var(--ink);font-family:Manrope,Arial,sans-serif;background-color:#f5f9ff;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:56px 56px}.page{min-height:100vh;padding:18px 14px 50px;overflow:hidden}.shell{position:relative;width:min(100%,500px);margin:auto;padding:24px;border:1.5px solid #61b9ff;border-radius:24px;background:rgba(229,245,255,.94);box-shadow:10px 12px 0 #32a9fa,0 28px 70px var(--shadow)}.brand{display:flex;align-items:center;gap:12px}.logo{display:grid;place-items:center;width:46px;height:46px;border-radius:13px;color:white;background:linear-gradient(135deg,var(--blue),var(--cyan));font-size:25px;font-weight:900;box-shadow:0 9px 22px rgba(0,133,245,.3)}.brand b{font-size:22px}.brand b em{color:var(--blue);font-style:normal}.brand small{display:block;color:var(--muted);font-size:10px;text-transform:uppercase}.secure{margin-left:auto;color:var(--green);font-weight:800;font-size:12px}.amount{margin:30px 0 20px}.live{display:inline-flex;align-items:center;gap:7px;margin-bottom:10px;padding:6px 10px;border-radius:99px;color:var(--blue);background:#d9efff;font-size:10px;font-weight:800;text-transform:uppercase}.live i{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 5px rgba(8,197,91,.12);animation:pulse 1.3s infinite}.amount p{margin:0 0 4px;color:var(--muted);font-size:12px;font-weight:800;text-transform:uppercase}.amount h1{margin:0;font-size:52px;line-height:1;font-weight:800}.amount h1 small{font-size:16px;color:var(--muted)}.card{padding:25px 20px 16px;text-align:center;border:1px solid #dbe8f2;border-radius:21px;background:white;box-shadow:0 15px 42px rgba(5,50,90,.08)}.qrbox{position:relative;width:min(100%,280px);aspect-ratio:1;margin:auto;padding:12px;overflow:hidden;border-radius:14px;background:white;box-shadow:0 0 0 1px #d9e6f0,0 0 42px rgba(7,135,245,.16);display:flex;align-items:center;justify-content:center}.qrbox #qrCanvas{display:block;width:100%;height:100%;object-fit:contain;border-radius:6px}.scan{position:absolute;z-index:3;left:10px;right:10px;top:10px;height:2px;background:var(--blue);box-shadow:0 0 10px var(--blue);animation:scan 3s ease-in-out infinite}.hint{margin:18px 0 13px}.hint b{display:block;font-size:12px;text-transform:uppercase}.hint span{font-size:10px;color:var(--muted)}button{border:0;font:inherit;cursor:pointer}.save,.done{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:43px;padding:0 22px;border-radius:11px;font-weight:700}.save{color:#075aa8;background:#edf7ff;box-shadow:0 3px 8px rgba(4,70,130,.12)}dl{margin:20px 0 0;text-align:left}dl div{display:grid;grid-template-columns:88px 1fr;gap:10px;padding:14px 0;border-top:1px solid #dce7ef;font-size:13px}dt{color:var(--muted);font-weight:600}dd{margin:0;text-align:right;font-weight:800;overflow-wrap:anywhere}.checking{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border-radius:99px;color:var(--blue);background:#dff1ff;white-space:nowrap}.checking i{width:8px;height:8px;border-radius:50%;background:var(--blue);box-shadow:0 0 0 5px rgba(7,135,245,.12);animation:pulse 1.2s infinite}.note{text-align:center;color:var(--muted);font-size:10px}.modal{position:fixed;z-index:10;inset:0;display:none;place-items:center;padding:16px;background:rgba(2,13,26,.76);backdrop-filter:blur(7px)}.modal.open{display:grid}.popup{position:relative;width:min(100%,430px);padding:38px 32px 32px;overflow:hidden;text-align:center;border:1px solid #8ee6b5;border-radius:24px;background:#f4fbff;box-shadow:0 30px 100px rgba(0,0,0,.35);animation:pop .55s cubic-bezier(.2,.9,.3,1.2)}.popup:before{content:"";position:absolute;inset:0 0 auto;height:6px;background:linear-gradient(90deg,var(--blue),var(--green),var(--cyan))}.check{display:grid;place-items:center;width:105px;height:105px;margin:0 auto 24px;border-radius:50%;color:white;background:var(--green);font-size:55px;box-shadow:0 0 0 12px #d9f8e8,0 0 46px rgba(8,197,91,.45);animation:float 3s 1s infinite}.popup label{color:var(--blue);font-size:10px;font-weight:800;text-transform:uppercase}.popup h2{margin:8px 0;color:var(--green);font-size:27px}.popup>p{margin:0 0 20px;color:var(--muted);font-size:14px}.receipt{padding:8px 16px;margin-bottom:25px;border-radius:12px;background:#edf5fa}.receipt div{display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid #dbe7ef;font-size:11px;text-align:left}.receipt div:last-child{border:0}.receipt span{color:var(--muted)}.receipt b{overflow-wrap:anywhere;text-align:right}.paid{color:var(--green)}.done{width:100%;color:white;background:linear-gradient(90deg,var(--blue),var(--cyan));box-shadow:0 8px 20px rgba(7,135,245,.25)}@keyframes scan{0%,100%{transform:translateY(0);opacity:.15}50%{transform:translateY(200px);opacity:.9}}@keyframes pulse{50%{opacity:.35;transform:scale(.8)}}@keyframes pop{from{opacity:0;transform:scale(.6) rotate(-5deg)}to{opacity:1;transform:scale(1)}}@keyframes float{50%{transform:translateY(-6px)}}@media(max-width:430px){.shell{padding:18px;box-shadow:7px 8px 0 #32a9fa}.amount h1{font-size:46px}.card{padding:18px 16px}.qrbox{width:min(100%,220px)}.popup{padding:34px 22px 25px}}
   </style>
 </head>
 <body>
@@ -720,7 +723,7 @@ PAYMENT_HTML = '''
   <header class="brand"><div class="logo">Ҝ</div><div><b>KHAN <em>PAY</em></b><small>Secure checkout</small></div><span class="secure">✓ Secure</span></header>
   <div class="amount"><span class="live"><i></i>Live payment request</span><p>Order total</p><h1>₹<span id="amount">1.00</span> <small>INR</small></h1></div>
   <div class="card">
-    <div class="qrbox"><div class="scan"></div><img id="qr" src="" alt="UPI QR Code"></div>
+    <div class="qrbox"><div class="scan"></div><div id="qrCanvas"></div></div>
     <div class="hint"><b>Scan with any UPI app</b><span>Google Pay, PhonePe, Paytm or BHIM</span></div>
     <button class="save" id="save">⇩ Save QR</button>
     <dl><div><dt>Merchant</dt><dd id="merchant">KHAN PAY</dd></div><div><dt>Order ID</dt><dd id="order">PF-K6I078RN</dd></div><div><dt>Expires in</dt><dd id="timer">04:22</dd></div><div><dt>Verification</dt><dd><span class="checking" id="statusBadge"><i></i>Waiting for payment...</span></dd></div></dl>
@@ -745,29 +748,33 @@ PAYMENT_HTML = '''
   $('paidAmount').textContent=data.amount;
   $('paidOrder').textContent=data.order;
 
-  // Set QR image from API
-  const qrImg = $('qr');
-  qrImg.src = '/api/qr-image.php?order_id=' + encodeURIComponent(data.order);
+  // Generate QR client-side
+  const upiIntent = `upi://pay?pa=${encodeURIComponent(data.upi)}&pn=KHANPAY&tr=${encodeURIComponent(data.order)}&am=${encodeURIComponent(data.amount)}&cu=INR`;
+  const qrContainer = document.getElementById('qrCanvas');
+  new QRCode(qrContainer, {
+    text: upiIntent,
+    width: 280,
+    height: 280,
+    colorDark: '#07162f',
+    colorLight: '#ffffff',
+    correctLevel: QRCode.CorrectLevel.H
+  });
 
   // Timer (expires in ~5 minutes)
   let left=262;
   setInterval(()=>{left=Math.max(0,left-1);$('timer').textContent=String(Math.floor(left/60)).padStart(2,'0')+':'+String(left%60).padStart(2,'0')},1000);
 
-  // Save QR – download the image from the API
+  // Save QR – download the canvas
   $('save').onclick=()=>{
-    fetch(qrImg.src)
-      .then(res=>res.blob())
-      .then(blob=>{
-        const a=document.createElement('a');
-        a.download=data.order+'-qr.png';
-        a.href=URL.createObjectURL(blob);
-        a.click();
-        URL.revokeObjectURL(a.href);
-      })
-      .catch(()=>{
-        // fallback: open image in new tab
-        window.open(qrImg.src, '_blank');
-      });
+    const canvas = qrContainer.querySelector('canvas');
+    if (canvas) {
+      const a = document.createElement('a');
+      a.download = data.order + '-qr.png';
+      a.href = canvas.toDataURL('image/png');
+      a.click();
+    } else {
+      alert('QR not ready');
+    }
   };
 
   // Success modal
